@@ -55,5 +55,12 @@ spec:
               memory: "128Mi"
               cpu: "500m"
           imagePullPolicy: IfNotPresent
+          env:
+            - name: TOKEN
+              value: "" # TODO: use secret
+            - name: NAMESPACE
+              value: "default"
+            - name: DEPLOYMENT
+              value: "kubernetes-bootcamp"
       restartPolicy: Always
 status: {}
