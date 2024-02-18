@@ -4,9 +4,9 @@ go 1.21.1
 
 require (
 	github.com/bwmarrin/discordgo v0.27.1
-	k8s.io/api v0.29.1
+	k8s.io/api v0.29.2
 	k8s.io/apimachinery v0.29.2
-	k8s.io/client-go v0.29.1
+	k8s.io/client-go v0.29.2
 )
 
 require (
