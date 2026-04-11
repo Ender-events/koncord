@@ -8,10 +8,12 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/Ender-events/koncord/internal/chat"
+	konlog "github.com/Ender-events/koncord/internal/log"
 )
 
 // Bot implements chat.Platform for Discord using application commands.
 type Bot struct {
+	ctx        context.Context // root context; cancelled on shutdown
 	session    *discordgo.Session
 	guildID    string
 	handler    chat.CommandHandler
@@ -22,8 +24,9 @@ type Bot struct {
 // Ensure interface compliance.
 var _ chat.Platform = (*Bot)(nil)
 
-// New creates a new Discord bot. The handler is invoked for every slash command.
-func New(token, guildID string, handler chat.CommandHandler, logger *slog.Logger) (*Bot, error) {
+// New creates a new Discord bot.
+// The handler is invoked for every slash command.
+func New(ctx context.Context, token, guildID string, handler chat.CommandHandler) (*Bot, error) {
 	session, err := discordgo.New("Bot " + token)
 	if err != nil {
 		return nil, fmt.Errorf("discord session: %w", err)
@@ -31,10 +34,11 @@ func New(token, guildID string, handler chat.CommandHandler, logger *slog.Logger
 	session.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages
 
 	return &Bot{
+		ctx:     ctx,
 		session: session,
 		guildID: guildID,
 		handler: handler,
-		logger:  logger,
+		logger:  konlog.G(ctx),
 	}, nil
 }
 
@@ -239,7 +243,7 @@ func (b *Bot) onInteractionCreate(s *discordgo.Session, i *discordgo.Interaction
 		},
 	}
 
-	if err := b.handler(context.Background(), cmd); err != nil {
+	if err := b.handler(b.ctx, cmd); err != nil {
 		b.logger.Error("command failed", "command", subCmd.Name, "err", err)
 		// Try to respond with error; if already responded, edit.
 		_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{

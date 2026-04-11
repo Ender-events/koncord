@@ -12,6 +12,7 @@ import (
 	"github.com/Ender-events/koncord/internal/auth"
 	"github.com/Ender-events/koncord/internal/chat"
 	"github.com/Ender-events/koncord/internal/domain"
+	konlog "github.com/Ender-events/koncord/internal/log"
 	"github.com/Ender-events/koncord/internal/runtime"
 	"github.com/Ender-events/koncord/internal/store"
 )
@@ -19,6 +20,7 @@ import (
 // Bot is the central command router that ties together auth, runtime, chat,
 // and persistence.
 type Bot struct {
+	ctx      context.Context
 	auth     *auth.Manager
 	runtime  runtime.ContainerRuntime
 	platform chat.Platform
@@ -26,24 +28,25 @@ type Bot struct {
 	logger   *slog.Logger
 
 	// log forwarding
-	logMu      sync.Mutex
-	logCancel  map[string]context.CancelFunc // channelID → cancel
+	logMu     sync.Mutex
+	logCancel map[string]context.CancelFunc // channelID → cancel
 }
 
 // New creates a new Bot.
 func New(
+	ctx context.Context,
 	authMgr *auth.Manager,
 	rt runtime.ContainerRuntime,
 	platform chat.Platform,
 	st *store.Store,
-	logger *slog.Logger,
 ) *Bot {
 	return &Bot{
+		ctx:       ctx,
 		auth:      authMgr,
 		runtime:   rt,
 		platform:  platform,
 		store:     st,
-		logger:    logger,
+		logger:    konlog.G(ctx),
 		logCancel: make(map[string]context.CancelFunc),
 	}
 }
@@ -77,10 +80,7 @@ func (b *Bot) HandleCommand(ctx context.Context, cmd chat.CommandContext) error 
 func (b *Bot) StopAllLogs() {
 	b.logMu.Lock()
 	defer b.logMu.Unlock()
-	for ch, cancel := range b.logCancel {
-		cancel()
-		delete(b.logCancel, ch)
-	}
+	clear(b.logCancel)
 }
 
 // ---------- command handlers ----------
@@ -157,7 +157,7 @@ func (b *Bot) handleLogs(ctx context.Context, cmd chat.CommandContext) error {
 	// Stop any existing log stream for this channel.
 	b.stopLogForChannel(cmd.ChannelID)
 
-	logCtx, cancel := context.WithCancel(context.Background())
+	logCtx, cancel := context.WithCancel(b.ctx)
 	b.logMu.Lock()
 	b.logCancel[cmd.ChannelID] = cancel
 	b.logMu.Unlock()

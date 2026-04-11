@@ -12,6 +12,7 @@ import (
 	"github.com/Ender-events/koncord/internal/chat"
 	"github.com/Ender-events/koncord/internal/chat/discord"
 	"github.com/Ender-events/koncord/internal/config"
+	konlog "github.com/Ender-events/koncord/internal/log"
 	dockerrt "github.com/Ender-events/koncord/internal/runtime/docker"
 	"github.com/Ender-events/koncord/internal/store"
 )
@@ -29,7 +30,11 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
-	ctx := context.Background()
+	// Seed the root context with the logger so all components can call
+	// log.G(ctx) without needing an explicit *slog.Logger parameter.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ctx = konlog.WithLogger(ctx, logger)
 
 	// ── Store ───────────────────────────────────────────────────────────
 	st, err := store.New(cfg.StateFilePath)
@@ -55,15 +60,15 @@ func main() {
 	var b *bot.Bot
 
 	// ── Chat platform ───────────────────────────────────────────────────
-	discordBot, err := discord.New(cfg.DiscordToken, cfg.GuildID, func(ctx context.Context, cmd chat.CommandContext) error {
+	discordBot, err := discord.New(ctx, cfg.DiscordToken, cfg.GuildID, func(ctx context.Context, cmd chat.CommandContext) error {
 		return b.HandleCommand(ctx, cmd)
-	}, logger)
+	})
 	if err != nil {
 		logger.Error("failed to create discord bot", "err", err)
 		os.Exit(1)
 	}
 
-	b = bot.New(authMgr, rt, discordBot, st, logger)
+	b = bot.New(ctx, authMgr, rt, discordBot, st)
 
 	// ── Start ───────────────────────────────────────────────────────────
 	if err := discordBot.Start(ctx); err != nil {
@@ -79,6 +84,7 @@ func main() {
 	<-sig
 
 	logger.Info("shutting down…")
+	cancel() // notify all in-flight handlers before cleanup
 	b.StopAllLogs()
 
 	if err := discordBot.Stop(); err != nil {
